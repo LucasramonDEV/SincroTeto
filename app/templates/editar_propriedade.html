@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SincroTeto - Editar {{ propriedade.nome }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        const VALOR_DIARIA = {{ propriedade.valor_diaria or 0 }};
+        const CUSTO_FIXO = {{ propriedade.custo_fixo_mensal or 0 }};
+
+        function toggleOcupacao() {
+            var status = document.getElementById('status').value;
+            var painel = document.getElementById('painel_ocupacao');
+            if (status === 'Ocupado') {
+                painel.style.display = 'block';
+            } else {
+                painel.style.display = 'none';
+            }
+        }
+        function toggleValorInput() {
+            var input = document.getElementById('valor_negociado');
+            input.readOnly = false;
+            input.classList.remove('bg-gray-100');
+            input.focus();
+            input.value = '';
+        }
+
+        function validarDatas() {
+            const inicio = document.getElementById('ocupado_inicio').value;
+            const fim = document.getElementById('ocupado_fim').value;
+
+            if (inicio && fim) {
+                if (new Date(fim) < new Date(inicio)) {
+                    alert("A Data de Saída não pode ser anterior à Data de Entrada!");
+                    document.getElementById('ocupado_fim').value = "";
+                }
+            }
+        }
+
+        function calcularValorOcupacao() {
+            const inicioStr = document.getElementById('ocupado_inicio').value;
+            const fimStr = document.getElementById('ocupado_fim').value;
+            const finalidade = document.getElementById('ocupado_por').value;
+            const inputValor = document.getElementById('valor_negociado');
+
+            if (finalidade === 'proprietario') {
+                inputValor.value = 0.00;
+                inputValor.readOnly = true;
+                inputValor.classList.add('bg-gray-100');
+                return;
+            }
+
+            if (inicioStr && fimStr && finalidade === 'hospede') {
+                const date1 = new Date(inicioStr);
+                const date2 = new Date(fimStr);
+                const diffTime = Math.abs(date2 - date1);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays > 0) {
+                    // Calculo: (Diaria + CustoFixo) * dias
+                    const total = (VALOR_DIARIA + CUSTO_FIXO) * diffDays;
+                    inputValor.value = total.toFixed(2);
+                    inputValor.readOnly = true;
+                    inputValor.classList.add('bg-gray-100');
+                }
+            }
+        }
+
+        window.onload = function() {
+            toggleOcupacao();
+            // Se ja existir um valor faturado, deixa visivel
+            const val = document.getElementById('valor_negociado').value;
+            if(val) {
+                document.getElementById('valor_negociado').readOnly = false;
+                document.getElementById('valor_negociado').classList.remove('bg-gray-100');
+            }
+        };
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-600 p-4 text-white flex justify-center items-center shadow-md relative">
+        <h1 class="text-2xl font-bold tracking-wider">Configurações da Propriedade</h1>
+        <div class="absolute right-4">
+            <a href="/propriedade/{{ propriedade.id }}" class="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded text-sm font-bold shadow transition">Voltar</a>
+        </div>
+    </nav>
+
+    <main class="p-8 max-w-4xl mx-auto space-y-8">
+        
+        <!-- Controle Manual de Check-in -->
+        <div class="bg-white rounded-lg shadow p-6 border-t-4 border-red-500">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Check-in e Ocupação Manual</h2>
+            <p class="text-sm text-gray-500 mb-6">Mude o status. Se estiver ocupado, defina as datas e o valor fechado para compor seu gráfico de rendimentos depois.</p>
+            
+            <form action="/propriedade/{{ propriedade.id }}/ocupacao" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Status Atual</label>
+                    <select name="status" id="status" onchange="toggleOcupacao()" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 font-bold text-lg {% if propriedade.status == 'Livre' %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
+                        <option value="Livre" {% if propriedade.status == 'Livre' %}selected{% endif %}>🟢 LIVRE</option>
+                        <option value="Ocupado" {% if propriedade.status == 'Ocupado' %}selected{% endif %}>🔴 OCUPADO</option>
+                    </select>
+                </div>
+
+                <div id="painel_ocupacao" style="display: none;" class="bg-gray-50 p-4 border rounded mt-4">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Data de Entrada</label>
+                            <input type="date" id="ocupado_inicio" name="ocupado_inicio" value="{% if propriedade.ocupado_inicio %}{{ propriedade.ocupado_inicio.strftime('%Y-%m-%d') }}{% endif %}" onchange="validarDatas(); calcularValorOcupacao();" class="mt-1 w-full p-2 border border-gray-300 rounded">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Data de Saída</label>
+                            <input type="date" id="ocupado_fim" name="ocupado_fim" value="{% if propriedade.ocupado_fim %}{{ propriedade.ocupado_fim.strftime('%Y-%m-%d') }}{% endif %}" onchange="validarDatas(); calcularValorOcupacao();" class="mt-1 w-full p-2 border border-gray-300 rounded">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Finalidade (Rentável?)</label>
+                            <select name="ocupado_por" id="ocupado_por" onchange="calcularValorOcupacao()" class="mt-1 w-full p-2 border border-gray-300 rounded">
+                                <option value="hospede" {% if propriedade.ocupado_por == 'hospede' %}selected{% endif %}>Hóspede (Rentável)</option>
+                                <option value="proprietario" {% if propriedade.ocupado_por == 'proprietario' %}selected{% endif %}>Uso Próprio (Sem fins lucrativos)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Valor Final Gerado (R$)</label>
+                            <div class="flex gap-2 text-sm mb-1">
+                                <button type="button" onclick="calcularValorOcupacao()" class="bg-gray-200 px-2 py-1 rounded hover:bg-gray-300 font-bold">Autocalcular Dias x Diária</button>
+                                <button type="button" onclick="toggleValorInput()" class="bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">Digitar Manualmente</button>
+                            </div>
+                            <input type="number" step="0.01" id="valor_negociado" name="valor_negociado" value="{{ propriedade.valor_negociado or '' }}" onclick="this.value=''" placeholder="Ex: 500.00" class="w-full p-2 border border-gray-300 rounded font-bold text-green-700 bg-gray-100" readonly>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-2 text-right">
+                    <button type="submit" class="bg-red-600 text-white px-6 py-2 rounded font-bold hover:bg-red-700">Atualizar Status e Datas</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Edição Básica e Financeira -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">⚙️ Valores Base da Propriedade</h2>
+            <form action="/propriedade/{{ propriedade.id }}/editar" method="POST" class="space-y-4">
+                
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Custo Fixo (Cond/IPTU)</label>
+                        <input type="number" step="0.01" name="custo_fixo_mensal" value="{{ propriedade.custo_fixo_mensal }}" class="mt-1 w-full p-2 border border-gray-300 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Valor Diária Base</label>
+                        <input type="number" step="0.01" name="valor_diaria" value="{{ propriedade.valor_diaria or '' }}" class="mt-1 w-full p-2 border border-gray-300 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Valor Mensalidade Base</label>
+                        <input type="number" step="0.01" name="valor_mensalidade" value="{{ propriedade.valor_mensalidade or '' }}" class="mt-1 w-full p-2 border border-gray-300 rounded">
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t">
+                    <label class="block text-sm font-medium text-gray-700">Tempo para Alarme de Vistoria da IA</label>
+                    <select name="alerta_frequencia_meses" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 font-bold text-yellow-700">
+                        <option value="3" {% if propriedade.alerta_frequencia_meses == 3 %}selected{% endif %}>3 Meses (Recomendado para Litoral)</option>
+                        <option value="4" {% if propriedade.alerta_frequencia_meses == 4 %}selected{% endif %}>4 Meses</option>
+                        <option value="5" {% if propriedade.alerta_frequencia_meses == 5 %}selected{% endif %}>5 Meses (Não recomendado)</option>
+                        <option value="6" {% if propriedade.alerta_frequencia_meses == 6 %}selected{% endif %}>6 Meses (Perigo de Corrosão Alto)</option>
+                    </select>
+                </div>
+
+                <div class="pt-2 text-right">
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Removi a aba de PDF que ficava aqui -->
+    </main>
+</body>
+</html>

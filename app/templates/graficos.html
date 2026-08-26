@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SincroTeto - Exportador de Relatório Avançado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: white !important; }
+            .grid { display: block !important; } /* Impressora nao curte grid as vezes */
+            .grafico-box { page-break-inside: avoid; margin-bottom: 20px; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-indigo-700 p-4 text-white flex justify-between items-center shadow-md no-print">
+        <h1 class="text-xl font-bold">Analytics & Relatório de Faturamento Mensal</h1>
+        <div class="flex gap-4">
+            <button onclick="window.print()" class="bg-white text-indigo-700 font-bold px-4 py-2 rounded shadow hover:bg-gray-100">📥 Exportar PDF Completo</button>
+            <a href="/dashboard?user_id={{ user_id }}" class="bg-indigo-800 px-4 py-2 rounded shadow hover:bg-indigo-900">Voltar ao Dashboard</a>
+        </div>
+    </nav>
+
+    <main class="p-8 max-w-[1200px] mx-auto bg-white shadow-2xl mt-4 border-t-8 border-indigo-700 print:shadow-none print:mt-0 print:border-none">
+        
+        <div class="text-center mb-10 pb-6 border-b border-gray-200">
+            <h2 class="text-4xl font-extrabold text-gray-800">Relatório Executivo SincroTeto</h2>
+            <p class="text-gray-500 text-lg mt-2">Visão 360º de Rentabilidade, Sazonalidade e Anomalias de Portfólio</p>
+        </div>
+
+        {% if graficos %}
+        
+        <style>
+            /* Aumentar drasticamente a altura dos gráficos para leitura */
+            .grafico-box { height: 550px; width: 100%; }
+        </style>
+
+        <!-- SESSAO 1: OCUPACAO -->
+        <h3 class="text-2xl font-bold text-gray-700 mb-4 border-l-4 border-indigo-500 pl-3">1. Taxas de Ocupação</h3>
+        <div class="grid grid-cols-1 gap-12 mb-16">
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-rosca"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-freq"></div>
+        </div>
+
+        <!-- SESSAO 2: FINANCEIRO E LUCRO -->
+        <h3 class="text-2xl font-bold text-gray-700 mb-4 border-l-4 border-green-500 pl-3">2. Performance Financeira</h3>
+        <div class="grid grid-cols-1 gap-12 mb-16">
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-lucro"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-rent"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-area"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-cat"></div>
+        </div>
+
+        <!-- SESSAO 3: IA E ANOMALIAS -->
+        <h3 class="text-2xl font-bold text-gray-700 mb-4 border-l-4 border-red-500 pl-3">3. Inteligência Artificial e Prevenção de Desperdícios</h3>
+        <div class="grid grid-cols-1 gap-12 mb-16">
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-disp"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-heatmap"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box" id="grafico-radar"></div>
+            <div class="border p-2 rounded shadow-sm grafico-box">
+                {% if graficos.rosca_despesas %}
+                    <div id="grafico-rosca-desp" class="w-full h-full"></div>
+                {% else %}
+                    <div class="h-full flex items-center justify-center text-gray-400">Nenhum gasto registrado.</div>
+                {% endif %}
+            </div>
+            <div class="border p-2 rounded shadow-sm grafico-box mb-12" id="grafico-tend"></div>
+        </div>
+
+        <script>
+            function carregarPlotly() {
+                Plotly.newPlot('grafico-rosca', {{ graficos.ocupacao_rosca | safe }}.data, {{ graficos.ocupacao_rosca | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-freq', {{ graficos.frequencia_pilha | safe }}.data, {{ graficos.frequencia_pilha | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-lucro', {{ graficos.lucro_acumulado | safe }}.data, {{ graficos.lucro_acumulado | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-rent', {{ graficos.rentabilidade_comparativa | safe }}.data, {{ graficos.rentabilidade_comparativa | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-area', {{ graficos.area_sobreposta | safe }}.data, {{ graficos.area_sobreposta | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-cat', {{ graficos.receita_categoria | safe }}.data, {{ graficos.receita_categoria | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-disp', {{ graficos.dispersao_anomalias | safe }}.data, {{ graficos.dispersao_anomalias | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-heatmap', {{ graficos.heatmap | safe }}.data, {{ graficos.heatmap | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-radar', {{ graficos.radar_performance | safe }}.data, {{ graficos.radar_performance | safe }}.layout, {responsive: true});
+                Plotly.newPlot('grafico-tend', {{ graficos.tendencia_linha | safe }}.data, {{ graficos.tendencia_linha | safe }}.layout, {responsive: true});
+                
+                {% if graficos.rosca_despesas %}
+                Plotly.newPlot('grafico-rosca-desp', {{ graficos.rosca_despesas | safe }}.data, {{ graficos.rosca_despesas | safe }}.layout, {responsive: true});
+                {% endif %}
+            }
+            window.onload = carregarPlotly;
+        </script>
+        {% else %}
+        <div class="bg-white p-10 rounded-lg shadow text-center">
+            <p class="text-gray-500">Cadastre pelo menos uma propriedade para gerar os 12 Relatórios Financeiros SincroTeto.</p>
+        </div>
+        {% endif %}
+    </main>
+</body>
+</html>

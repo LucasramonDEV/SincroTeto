@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SincroTeto - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Navbar -->
+    <nav class="bg-blue-600 p-4 text-white flex justify-center items-center shadow-md relative">
+        <!-- Menu Hamburger Esquerdo -->
+        <div class="absolute left-4">
+            <button onclick="toggleSidebar()" class="text-white hover:text-gray-200 focus:outline-none z-50 relative">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+        </div>
+
+        <h1 class="text-2xl font-bold tracking-wider">SincroTeto</h1>
+
+        <div class="absolute right-4 flex items-center gap-4">
+            <span class="text-sm font-medium">Olá, {{ usuario.nome }}</span>
+        </div>
+    </nav>
+
+    <!-- Sidebar Lateral -->
+    <div id="sidebar" class="fixed inset-y-0 left-0 w-64 bg-gray-900 text-white transform -translate-x-full transition-transform duration-300 z-40 shadow-2xl flex flex-col">
+        <div class="p-6 mt-12 flex-1">
+            <h2 class="text-xs uppercase text-gray-500 font-bold mb-4" data-i18n="menu">MENU</h2>
+            <ul class="space-y-2">
+                <li><a href="/configuracoes/{{ usuario.id }}" class="block p-3 rounded hover:bg-gray-800 transition flex items-center gap-3">⚙️ <span data-i18n="configuracoes">Configurações</span></a></li>
+                <li class="relative group">
+                    <a href="#" class="block p-3 rounded hover:bg-gray-800 transition flex items-center gap-3">🌍 <span data-i18n="alterar_idioma">Alterar Idioma</span></a>
+                    <!-- Submenu Idioma -->
+                    <ul class="hidden group-hover:block absolute left-full top-0 ml-1 bg-gray-800 w-40 rounded shadow-lg overflow-hidden">
+                        <li><button onclick="mudarIdioma('pt')" class="w-full text-left p-3 hover:bg-gray-700">🇧🇷 Português</button></li>
+                        <li><button onclick="mudarIdioma('en')" class="w-full text-left p-3 hover:bg-gray-700">🇺🇸 English</button></li>
+                        <li><button onclick="mudarIdioma('es')" class="w-full text-left p-3 hover:bg-gray-700">🇪🇸 Español</button></li>
+                    </ul>
+                </li>
+                <li><a href="/feedback/{{ usuario.id }}" class="block p-3 rounded hover:bg-gray-800 transition flex items-center gap-3">💬 <span data-i18n="feedback">Enviar Feedback</span></a></li>
+            </ul>
+        </div>
+        <div class="p-6 border-t border-gray-800">
+            <a href="/" class="block w-full text-center bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded transition" data-i18n="sair">Sair</a>
+        </div>
+    </div>
+
+    <!-- Overlay Escuro para fechar o menu -->
+    <div id="overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black bg-opacity-50 hidden z-30"></div>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('-translate-x-full');
+            if(sidebar.classList.contains('-translate-x-full')){
+                overlay.classList.add('hidden');
+            } else {
+                overlay.classList.remove('hidden');
+            }
+        }
+
+        // Sistema Completo de Multi-Idiomas
+        const traducoes = {
+            'pt': {
+                'menu': 'MENU', 'configuracoes': 'Configurações', 'alterar_idioma': 'Alterar Idioma',
+                'feedback': 'Enviar Feedback', 'sair': 'Sair', 'visao_geral': 'Visão Geral',
+                'ver_relatorios': '📊 Ver Relatórios (Plotly)', 'nova_propriedade': '+ Nova Propriedade',
+                'prop_ativas': 'Propriedades Ativas', 'taxa_ocupacao': 'Taxa Média de Ocupação Hoje',
+                'alertas_ia': 'Alertas de IA (Desgaste)', 'suas_props': 'Suas Propriedades',
+                'ver_detalhes': 'Ver Detalhes'
+            },
+            'en': {
+                'menu': 'MENU', 'configuracoes': 'Settings', 'alterar_idioma': 'Change Language',
+                'feedback': 'Send Feedback', 'sair': 'Logout', 'visao_geral': 'Overview',
+                'ver_relatorios': '📊 View Reports (Plotly)', 'nova_propriedade': '+ New Property',
+                'prop_ativas': 'Active Properties', 'taxa_ocupacao': 'Avg Occupancy Rate Today',
+                'alertas_ia': 'AI Alerts (Wear)', 'suas_props': 'Your Properties',
+                'ver_detalhes': 'View Details'
+            },
+            'es': {
+                'menu': 'MENÚ', 'configuracoes': 'Ajustes', 'alterar_idioma': 'Cambiar Idioma',
+                'feedback': 'Enviar Comentarios', 'sair': 'Salir', 'visao_geral': 'Visión General',
+                'ver_relatorios': '📊 Ver Informes (Plotly)', 'nova_propriedade': '+ Nueva Propiedad',
+                'prop_ativas': 'Propiedades Activas', 'taxa_ocupacao': 'Tasa Media de Ocupación Hoy',
+                'alertas_ia': 'Alertas de IA (Desgaste)', 'suas_props': 'Tus Propiedades',
+                'ver_detalhes': 'Ver Detalles'
+            }
+        };
+
+        function mudarIdioma(lang) {
+            localStorage.setItem('sincroteto_lang', lang);
+            aplicarIdioma();
+            toggleSidebar(); // Fecha o menu apos escolher
+        }
+
+        function aplicarIdioma() {
+            const lang = localStorage.getItem('sincroteto_lang') || 'pt'; // PT é o default
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if(traducoes[lang] && traducoes[lang][key]){
+                    el.innerText = traducoes[lang][key];
+                }
+            });
+        }
+
+        window.onload = aplicarIdioma;
+    </script>
+
+    <!-- Content -->
+    <main class="p-8 max-w-7xl mx-auto">
+        <div class="mb-8 flex justify-between items-center">
+            <h2 class="text-2xl font-bold text-gray-800" data-i18n="visao_geral">Visão Geral</h2>
+            <div class="flex gap-4">
+                <a href="/relatorio/{{ usuario.id }}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded shadow transition" data-i18n="ver_relatorios">
+                    📊 Ver Relatórios (Plotly)
+                </a>
+                <a href="/propriedade/nova?user_id={{ usuario.id }}" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded shadow transition" data-i18n="nova_propriedade">
+                    + Nova Propriedade
+                </a>
+            </div>
+        </div>
+
+        <!-- Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+                <h3 class="text-gray-500 text-sm font-semibold uppercase" data-i18n="prop_ativas">Propriedades Ativas</h3>
+                <p class="text-3xl font-bold text-gray-800">{{ usuario.propriedades|length }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
+                <h3 class="text-gray-500 text-sm font-semibold uppercase" data-i18n="taxa_ocupacao">Taxa Média de Ocupação Hoje</h3>
+                <p class="text-3xl font-bold text-gray-800">{{ taxa_ocupacao }}%</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500">
+                <h3 class="text-gray-500 text-sm font-semibold uppercase" data-i18n="alertas_ia">Alertas de IA (Desgaste)</h3>
+                <p class="text-3xl font-bold text-yellow-600">{{ alertas|length }}</p>
+            </div>
+        </div>
+
+        <!-- Lista de Alertas -->
+        {% if alertas %}
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 shadow">
+            <h3 class="text-lg font-bold text-yellow-800 mb-2">Atenção Necessária:</h3>
+            <ul class="list-disc ml-5 text-sm text-yellow-700 space-y-1">
+                {% for alerta in alertas %}
+                <li><strong>{{ alerta.nome }}:</strong> {{ alerta.mensagem }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Section para Propriedades (Agrupadas por Categoria) -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-xl font-bold text-gray-800 mb-6" data-i18n="suas_props">Suas Propriedades</h3>
+
+            {% if usuario.propriedades %}
+                <!-- Mapeamento visual das Categorias -->
+                {% set categoria_nomes = {
+                    'Flat_Veraneio': 'Flats de Veraneio (Temporada)',
+                    'Residencial': 'Imóveis Residenciais (Casas/Aptos)',
+                    'Galpao': 'Galpões Comerciais',
+                    'Sala_Empresarial': 'Salas e Escritórios',
+                    'Outros': 'Outros Tipos de Propriedade'
+                } %}
+
+                <!-- Agrupa a lista de propriedades usando groupby do Jinja -->
+                {% for categoria, props_na_categoria in usuario.propriedades | groupby('tipo') %}
+
+                    <div class="mb-8 last:mb-0">
+                        <!-- Cabecalho da Categoria -->
+                        <h4 class="text-lg font-extrabold text-blue-800 border-b-2 border-blue-200 pb-2 mb-4 flex items-center gap-2">
+                            {% if categoria == 'Flat_Veraneio' %} 🏖️
+                            {% elif categoria == 'Residencial' %} 🏠
+                            {% elif categoria == 'Galpao' %} 🏭
+                            {% elif categoria == 'Sala_Empresarial' %} 💼
+                            {% else %} 📌 {% endif %}
+                            {{ categoria_nomes.get(categoria, categoria) }}
+                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full ml-2">{{ props_na_categoria|length }}</span>
+                        </h4>
+
+                        <ul class="divide-y divide-gray-100 bg-gray-50 border border-gray-200 rounded-lg p-2">
+                            {% for prop in props_na_categoria %}
+                                <li class="py-4 px-4 flex justify-between items-center hover:bg-white transition rounded">
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-3">
+                                            <p class="text-lg font-bold text-gray-900">{{ prop.nome }}</p>
+
+                                            {% if prop.status_hoje == 'Livre' %}
+                                                <span class="px-2 py-1 text-xs font-bold rounded bg-green-100 text-green-700 uppercase shadow-sm">🟢 Livre</span>
+                                            {% else %}
+                                                <span class="px-2 py-1 text-xs font-bold rounded bg-red-100 text-red-700 uppercase shadow-sm">
+                                                    🔴 Ocupado (Até {{ prop.reserva_atual_fim }})
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                        <p class="text-sm text-gray-500 mt-1"><span class="font-medium text-gray-600">{{ prop.regiao }}</span> ({{ prop.bairro }})</p>
+                                    </div>
+                                    <div class="flex gap-3 items-center">
+                                        <a href="/propriedade/{{ prop.id }}/portal" class="text-gray-500 hover:text-green-600 transition" target="_blank" title="Imprimir Portal Hóspede">
+                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                                        </a>
+                                        <a href="/propriedade/{{ prop.id }}" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-bold shadow-md transition" data-i18n="ver_detalhes">Ver Detalhes</a>
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endfor %}
+
+            {% else %}
+                <div class="text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                    <p class="text-gray-500 mb-4 text-lg">Nenhuma propriedade cadastrada ainda.</p>
+                    <a href="/propriedade/nova?user_id={{ usuario.id }}" class="bg-blue-600 text-white px-6 py-3 rounded font-bold hover:bg-blue-700 inline-block shadow-lg transition" data-i18n="nova_propriedade">+ Cadastrar Primeiro Imóvel</a>
+                </div>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>

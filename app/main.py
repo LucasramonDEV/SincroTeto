@@ -1,0 +1,646 @@
+from fastapi import FastAPI, Request, Depends, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+import os
+
+from app.database import engine, Base, get_db
+from app.models.base import Usuario, Propriedade, Gasto, Feedback, Reserva
+from app.services.ical_service import parse_ical_to_dataframe, calcular_ocupacao_mensal
+from app.services.financeiro_service import obter_ipca_acumulado_12m, calcular_custo_oportunidade
+from app.services.ai_service import categorizar_gasto_nlp, motor_sazonalidade
+from app.services.scheduler_service import iniciar_scheduler, alertas_memoria
+
+# ... (outros imports ja existentes) ...
+
+
+# Cria as tabelas no banco de dados se não existirem
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="SincroTeto", description="Sistema Inteligente de Gestão de Propriedades")
+
+# Configuração de arquivos estáticos e templates
+os.makedirs("app/static", exist_ok=True)
+os.makedirs("app/templates", exist_ok=True)
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
+
+@app.on_event("startup")
+def startup_event():
+    # Inicia a thread de Alertas em background
+    iniciar_scheduler()
+
+from app.services.relatorio_service import gerar_graficos_plotly
+
+@app.get("/relatorio/{user_id}", response_class=HTMLResponse)
+async def ver_relatorios(request: Request, user_id: int, db: Session = Depends(get_db)):
+    # Gera o JSON dos gráficos
+    graficos = gerar_graficos_plotly(db, user_id)
+    return templates.TemplateResponse("graficos.html", {"request": request, "user_id": user_id, "graficos": graficos})
+
+@app.get("/propriedade/{propriedade_id}/portal", response_class=HTMLResponse)
+async def portal_hospede(request: Request, propriedade_id: int, db: Session = Depends(get_db)):
+    propriedade = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if not propriedade:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse("portal_hospede.html", {"request": request, "propriedade": propriedade})
+    db = next(get_db())
+    if not db.query(Usuario).first():
+        admin = Usuario(nome="Administrador", chave_acesso="admin123")
+        db.add(admin)
+        db.commit()
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request, error: str = None):
+    return templates.TemplateResponse("index.html", {"request": request, "title": "SincroTeto - Login", "error": error})
+
+@app.post("/login")
+async def login(request: Request, login: str = Form(...), senha: str = Form(...), db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.login == login, Usuario.senha == senha).first()
+    if usuario:
+        if usuario.papel == "admin":
+            return RedirectResponse(url=f"/admin/dashboard?admin_id={usuario.id}", status_code=303)
+        else:
+            return RedirectResponse(url=f"/dashboard?user_id={usuario.id}", status_code=303)
+    else:
+        return RedirectResponse(url="/?error=Usuário ou Senha inválidos", status_code=303)
+
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, admin_id: int, db: Session = Depends(get_db)):
+    admin = db.query(Usuario).filter(Usuario.id == admin_id, Usuario.papel == 'admin').first()
+    if not admin:
+        return RedirectResponse(url="/", status_code=303)
+
+    todos_usuarios = db.query(Usuario).all()
+    todas_propriedades = db.query(Propriedade).all()
+
+    return templates.TemplateResponse("admin_dashboard.html", {
+        "request": request,
+        "usuario": admin,
+        "todos_usuarios": todos_usuarios,
+        "todas_propriedades": todas_propriedades
+    })
+
+@app.post("/admin/remover_usuario/{user_id}")
+async def admin_remover_usuario(user_id: int, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if usuario and usuario.papel != 'admin':
+        db.delete(usuario)
+        db.commit()
+    return RedirectResponse(url="/admin/dashboard?admin_id=1", status_code=303)
+
+@app.post("/admin/remover_propriedade/{prop_id}")
+async def admin_remover_propriedade(prop_id: int, db: Session = Depends(get_db)):
+    propriedade = db.query(Propriedade).filter(Propriedade.id == prop_id).first()
+    if propriedade:
+        db.delete(propriedade)
+        db.commit()
+    return RedirectResponse(url="/admin/dashboard?admin_id=1", status_code=303)
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, user_id: int, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario:
+        return RedirectResponse(url="/", status_code=303)
+
+    from datetime import datetime
+    hoje = datetime.utcnow().date()
+    total_prop = len(usuario.propriedades)
+    ocupadas = 0
+
+    # Adiciona logicamente o status atual ("Livre" ou "Ocupado até X") para a view
+    for prop in usuario.propriedades:
+        prop.status_hoje = "Livre"
+        prop.reserva_atual_fim = None
+        for res in prop.reservas:
+            if res.data_inicio.date() <= hoje <= res.data_fim.date():
+                prop.status_hoje = "Ocupado"
+                prop.reserva_atual_fim = res.data_fim.strftime('%d/%m')
+                ocupadas += 1
+                break
+
+    taxa_ocupacao = round((ocupadas / total_prop * 100), 1) if total_prop > 0 else 0.0
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "usuario": usuario,
+        "alertas": alertas_memoria,
+        "taxa_ocupacao": taxa_ocupacao
+    })
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "online", "message": "Sistema SincroTeto Operacional"}
+
+@app.get("/propriedade/nova", response_class=HTMLResponse)
+async def nova_propriedade_form(request: Request, user_id: int):
+    return templates.TemplateResponse("nova_propriedade.html", {"request": request, "user_id": user_id})
+
+@app.post("/propriedade/nova")
+async def criar_propriedade(
+    dono_id: int = Form(...),
+    nome: str = Form(...),
+    tipo: str = Form(...),
+    tipo_aluguel: str = Form(...),
+    regiao: str = Form(...),
+    bairro: str = Form(...),
+    link_ical: str = Form(None),
+    fotos_ocultas: str = Form(None),
+    descricao_oculta: str = Form(None),
+    custo_fixo_mensal: float = Form(0.0),
+    valor_diaria: float = Form(None),
+    valor_mensalidade: float = Form(None),
+    alerta_frequencia_meses: int = Form(3),
+    from_admin: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    nova_prop = Propriedade(
+        nome=nome,
+        tipo=tipo,
+        tipo_aluguel=tipo_aluguel,
+        regiao=regiao,
+        bairro=bairro,
+        descricao=descricao_oculta,
+        fotos=fotos_ocultas,
+        link_ical=link_ical,
+        custo_fixo_mensal=custo_fixo_mensal,
+        valor_diaria=valor_diaria,
+        valor_mensalidade=valor_mensalidade,
+        alerta_frequencia_meses=alerta_frequencia_meses,
+        dono_id=dono_id
+    )
+    db.add(nova_prop)
+    db.commit()
+    db.refresh(nova_prop)
+
+    if from_admin == "1":
+        return RedirectResponse(url="/admin/dashboard?admin_id=1", status_code=303)
+    return RedirectResponse(url=f"/dashboard?user_id={dono_id}", status_code=303)
+
+@app.get("/propriedade/{propriedade_id}", response_class=HTMLResponse)
+async def detalhes_propriedade(
+    request: Request,
+    propriedade_id: int,
+    taxa_ocupacao: float = None,
+    diaria_curto: float = None,
+    aluguel_longo: float = None,
+    user_logado_papel: str = None,
+    msg_erro: str = None,
+    msg_sucesso: str = None,
+    db: Session = Depends(get_db)
+):
+    propriedade = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if not propriedade:
+        return RedirectResponse(url="/", status_code=303)
+
+    gastos = db.query(Gasto).filter(Gasto.propriedade_id == propriedade_id).order_by(Gasto.data_gasto.desc()).all()
+    reservas = db.query(Reserva).filter(Reserva.propriedade_id == propriedade_id).order_by(Reserva.data_inicio.asc()).all()
+
+    ipca = obter_ipca_acumulado_12m()
+
+    simulacao = None
+    if taxa_ocupacao and diaria_curto and aluguel_longo:
+        simulacao = calcular_custo_oportunidade(
+            taxa_ocupacao_atual=taxa_ocupacao,
+            valor_diaria_curto=diaria_curto,
+            valor_aluguel_longo=aluguel_longo,
+            custo_fixo_mensal=propriedade.custo_fixo_mensal
+        )
+
+    dica_sazonalidade = motor_sazonalidade(propriedade.regiao)
+    link_voltar = f"/admin/dashboard?admin_id=1" if request.query_params.get("admin") == "1" else f"/dashboard?user_id={propriedade.dono_id}"
+
+    return templates.TemplateResponse("detalhes_propriedade.html", {
+        "request": request,
+        "propriedade": propriedade,
+        "gastos": gastos,
+        "reservas": reservas,
+        "ipca": ipca,
+        "simulacao": simulacao,
+        "dica_sazonalidade": dica_sazonalidade,
+        "link_voltar": link_voltar,
+        "msg_erro": msg_erro,
+        "msg_sucesso": msg_sucesso
+    })
+
+@app.post("/propriedade/{propriedade_id}/gasto")
+async def adicionar_gasto(
+    propriedade_id: int,
+    descricao: str = Form(...),
+    valor: float = Form(...),
+    db: Session = Depends(get_db)
+):
+    # Passa o texto do usuario pela IA de categorização
+    categoria = categorizar_gasto_nlp(descricao)
+
+    novo_gasto = Gasto(
+        descricao_original=descricao,
+        categoria_ia=categoria,
+        valor=valor,
+        propriedade_id=propriedade_id
+    )
+    db.add(novo_gasto)
+    db.commit()
+    
+    return RedirectResponse(url=f"/propriedade/{propriedade_id}", status_code=303)
+
+@app.get("/propriedade/{propriedade_id}/simular")
+async def simular_aluguel(
+    propriedade_id: int,
+    taxa_ocupacao: float,
+    diaria_curto: float,
+    aluguel_longo: float
+):
+    # Redireciona de volta para os detalhes passando os parametros na URL para renderizar o resultado
+    return RedirectResponse(url=f"/propriedade/{propriedade_id}?taxa_ocupacao={taxa_ocupacao}&diaria_curto={diaria_curto}&aluguel_longo={aluguel_longo}", status_code=303)
+
+@app.get("/propriedade/{propriedade_id}/editar", response_class=HTMLResponse)
+async def editar_propriedade_form(request: Request, propriedade_id: int, db: Session = Depends(get_db)):
+    propriedade = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if not propriedade:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse("editar_propriedade.html", {"request": request, "propriedade": propriedade})
+
+@app.post("/propriedade/{propriedade_id}/editar")
+async def salvar_edicao_propriedade(
+    propriedade_id: int,
+    status: str = Form(...),
+    custo_fixo_mensal: float = Form(...),
+    valor_diaria: float = Form(None),
+    valor_mensalidade: float = Form(None),
+    alerta_frequencia_meses: int = Form(3),
+    db: Session = Depends(get_db)
+):
+    prop = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if prop:
+        prop.status = status
+        prop.custo_fixo_mensal = custo_fixo_mensal
+        prop.valor_diaria = valor_diaria
+        prop.valor_mensalidade = valor_mensalidade
+        prop.alerta_frequencia_meses = alerta_frequencia_meses
+        db.commit()
+    return RedirectResponse(url=f"/propriedade/{propriedade_id}/editar", status_code=303)
+
+import shutil
+from fastapi import UploadFile, File
+
+@app.get("/configuracoes/{user_id}", response_class=HTMLResponse)
+async def tela_configuracoes(request: Request, user_id: int, msg_sucesso: str = None, msg_erro: str = None, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse("configuracoes.html", {
+        "request": request, "usuario": usuario, "msg_sucesso": msg_sucesso, "msg_erro": msg_erro
+    })
+
+@app.post("/perfil/editar")
+async def editar_perfil(
+    user_id: int = Form(...),
+    nome: str = Form(...),
+    sobrenome: str = Form(None),
+    email: str = Form(None),
+    cpf: str = Form(None),
+    prefixo: str = Form(""),
+    numero_telefone: str = Form(""),
+    foto: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if usuario:
+        usuario.nome = nome
+        usuario.sobrenome = sobrenome
+        usuario.email = email
+        usuario.cpf = cpf
+        usuario.telefone = f"{prefixo} {numero_telefone}" if numero_telefone else None
+
+        # Simulação simples de upload de foto
+        if foto and foto.filename:
+            file_location = f"app/static/perfil_{user_id}_{foto.filename}"
+            with open(file_location, "wb+") as file_object:
+                shutil.copyfileobj(foto.file, file_object)
+            usuario.foto_perfil = f"/static/perfil_{user_id}_{foto.filename}"
+
+        db.commit()
+    return RedirectResponse(url=f"/configuracoes/{user_id}?msg_sucesso=Perfil salvo com sucesso!", status_code=303)
+
+@app.post("/perfil/alterar_senha")
+async def alterar_senha(
+    user_id: int = Form(...),
+    senha_atual: str = Form(...),
+    nova_senha: str = Form(...),
+    confirmar_senha: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario or usuario.senha != senha_atual:
+        return RedirectResponse(url=f"/configuracoes/{user_id}?msg_erro=Senha atual incorreta!", status_code=303)
+
+    if nova_senha != confirmar_senha:
+        return RedirectResponse(url=f"/configuracoes/{user_id}?msg_erro=A confirmação de senha não bate!", status_code=303)
+
+    usuario.senha = nova_senha
+    db.commit()
+    return RedirectResponse(url=f"/configuracoes/{user_id}?msg_sucesso=Senha alterada com sucesso! Use a nova senha no próximo login.", status_code=303)
+
+from app.models.base import Feedback
+
+@app.get("/feedback/{user_id}", response_class=HTMLResponse)
+async def tela_feedback(request: Request, user_id: int, msg_sucesso: str = None, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    return templates.TemplateResponse("feedback.html", {"request": request, "usuario": usuario, "msg_sucesso": msg_sucesso})
+
+@app.post("/feedback/enviar")
+async def enviar_feedback(
+    user_id: int = Form(...),
+    nome: str = Form(...),
+    estrelas: float = Form(...),
+    comentario: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    novo_feed = Feedback(nome_usuario=nome, estrelas=estrelas, comentario=comentario, usuario_id=user_id)
+    db.add(novo_feed)
+    db.commit()
+    return RedirectResponse(url=f"/feedback/{user_id}?msg_sucesso=1", status_code=303)
+async def editar_pdf_form(request: Request, propriedade_id: int, db: Session = Depends(get_db)):
+    propriedade = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if not propriedade:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse("editar_pdf.html", {"request": request, "propriedade": propriedade})
+
+@app.post("/propriedade/{propriedade_id}/editar_pdf")
+async def salvar_edicao_pdf(
+    propriedade_id: int,
+    pdf_wifi_rede: str = Form(...),
+    pdf_wifi_senha: str = Form(...),
+    pdf_regras_casa: str = Form(...),
+    pdf_guia_uso: str = Form(...),
+    pdf_contatos_emergencia: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    prop = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if prop:
+        prop.pdf_wifi_rede = pdf_wifi_rede
+        prop.pdf_wifi_senha = pdf_wifi_senha
+        prop.pdf_regras_casa = pdf_regras_casa
+        prop.pdf_guia_uso = pdf_guia_uso
+        prop.pdf_contatos_emergencia = pdf_contatos_emergencia
+        db.commit()
+    return RedirectResponse(url=f"/propriedade/{propriedade_id}/editar", status_code=303)
+
+@app.get("/alertas", response_class=HTMLResponse)
+async def pagina_alertas(request: Request, user_id: int, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
+    if not usuario:
+        return RedirectResponse(url="/", status_code=303)
+
+    # Filtra os alertas em memória para mostrar apenas os do usuario atual, ou todos se for admin
+    if usuario.papel == 'admin':
+        meus_alertas = alertas_memoria
+    else:
+        meus_alertas = [a for a in alertas_memoria if a['dono_id'] == user_id]
+
+    return templates.TemplateResponse("admin_alertas.html", {
+        "request": request,
+        "usuario": usuario,
+        "user_id": user_id,
+        "alertas": meus_alertas
+    })
+
+@app.post("/propriedade/{propriedade_id}/resolver_alerta")
+async def resolver_alerta(propriedade_id: int, user_id: int = Form(...), db: Session = Depends(get_db)):
+    propriedade = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if propriedade:
+        from datetime import datetime
+        propriedade.data_ultima_vistoria = datetime.utcnow()
+        db.commit()
+    
+    return RedirectResponse(url=f"/alertas?user_id={user_id}", status_code=303)
+
+from pydantic import BaseModel
+class IcalRequest(BaseModel):
+    url: str
+
+@app.post("/api/extrair_ical")
+async def extrair_nome_ical(data: IcalRequest):
+    """
+    Lê o link do Airbnb (suportando links complexos), limpa a URL, extrai título
+    e infere a região e o bairro.
+    """
+    try:
+        import requests
+        import re
+        from bs4 import BeautifulSoup
+        if not data.url or not data.url.startswith("http"):
+            return {"nome": None}
+
+        # LIMPEZA DA URL DO AIRBNB E BOOKING
+        url_limpa = data.url
+        # Remove os parametros ?check_in=... que causam bloqueio antibot e erro de sessao do Airbnb
+        if "?" in url_limpa:
+            url_limpa = url_limpa.split("?")[0]
+        # Força o idioma para que a descrição venha em português
+        if "airbnb" in url_limpa:
+            url_limpa += "?locale=pt-BR"
+
+        # TÁTICA GOOGLEBOT: Força o Airbnb a entregar a pagina em HTML limpo sem protecao bot
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+
+        response = requests.get(url_limpa, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
+
+        nome = None
+        descricao = None
+
+        # 1. Tenta pegar a meta tag do titulo
+        meta_title = soup.find("meta", property="og:title")
+        if meta_title and meta_title.get("content"):
+            nome = meta_title.get("content").split('-')[0].strip()
+
+        if not nome:
+            match = re.search(r'<title>(.*?)</title>', html)
+            if match:
+                nome = match.group(1).split('-')[0].strip()
+
+        if not nome:
+            nome = "Propriedade Extraída" # Fallback
+
+        # 2. Descricao
+        meta_desc = soup.find("meta", property="og:description")
+        if meta_desc:
+            descricao = meta_desc.get("content")
+        else:
+            # O Airbnb às vezes esconde a tag principal de descricão em uma tag <meta name="description">
+            meta_desc_alt = soup.find("meta", attrs={"name": "description"})
+            if meta_desc_alt:
+                descricao = meta_desc_alt.get("content")
+            else:
+                descricao = "Descrição não fornecida publicamente."
+
+        # 3. Comodidades Iniciais (Raspagem superficial)
+        comodidades = []
+        texto_analise = f"{nome} {descricao}".lower()
+
+        if "wifi" in texto_analise or "wi-fi" in texto_analise or "internet" in texto_analise: comodidades.append("Wi-Fi")
+        if "piscina" in texto_analise or "pool" in texto_analise: comodidades.append("Piscina")
+        if "ar condicionado" in texto_analise or "ar-condicionado" in texto_analise or "ac" in texto_analise.split(): comodidades.append("Ar-condicionado")
+        if "garagem" in texto_analise or "estacionamento" in texto_analise or "parking" in texto_analise: comodidades.append("Estacionamento")
+
+        if comodidades:
+            descricao = f"{descricao}\n\n[Comodidades Encontradas: {', '.join(comodidades)}]"
+
+        # INFERÊNCIA DE REGIÃO E BAIRRO
+        regiao_inferida = None
+        bairro_inferido = None
+
+        mapa_regioes = {
+            "Ipojuca (Praias)": ["porto de galinhas", "muro alto", "cupe", "serrambi", "ipojuca"],
+            "Recife (Zona Norte)": ["casa amarela", "graças", "espinheiro", "tamarineira", "casa forte", "rosarinho", "jaqueira", "poço da panela", "parnamirim", "zona norte"],
+            "Recife (Zona Oeste)": ["várzea", "cordeiro", "iputinga", "madalena", "cidade universitária", "torre", "prado", "zona oeste"],
+            "Recife (Zona Sul)": ["boa viagem", "pina", "imbiribeira", "setúbal", "ipsep", "zona sul"],
+            "Gravatá": ["gravatá", "alpes suíços", "porta florada"],
+            "Sairé": ["sairé"],
+            "Olinda (Sítio Histórico e Centro)": ["carmo", "amparo", "varadouro", "sítio histórico", "olinda"],
+            "Olinda (Faixa Litorânea)": ["bairro novo", "casa caiada", "jardim atlântico"]
+        }
+
+        # Busca pelo bairro mais especifico no texto
+        encontrou = False
+        for regiao_nome, bairros in mapa_regioes.items():
+            for bairro in bairros:
+                if bairro in texto_analise:
+                    regiao_inferida = regiao_nome
+                    bairro_inferido = bairro.title() if bairro != "graças" else "Graças"
+                    if bairro == "porto de galinhas": bairro_inferido = "Porto de Galinhas"
+                    if bairro == "muro alto": bairro_inferido = "Muro Alto"
+                    if bairro == "boa viagem": bairro_inferido = "Boa Viagem"
+                    encontrou = True
+                    break
+            if encontrou: break
+
+        return {
+            "nome": nome,
+            "descricao": descricao,
+            "fotos": None, # FOTOS REMOVIDAS DO SCRAPER
+            "regiao": regiao_inferida,
+            "bairro": bairro_inferido
+        }
+
+    except Exception as e:
+        print("Erro extrair_ical:", e)
+        return {"nome": None}
+
+from typing import Optional
+from datetime import date
+
+@app.post("/propriedade/{propriedade_id}/ocupacao")
+async def salvar_ocupacao_manual(
+    propriedade_id: int,
+    ocupado_inicio: date = Form(...),
+    ocupado_fim: date = Form(...),
+    ocupado_por: str = Form(...),
+    valor_negociado: float = Form(0.0),
+    db: Session = Depends(get_db)
+):
+    # Motor Anti-Colisão (Impede overlap de datas)
+    prop = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if not prop:
+        return RedirectResponse(url="/", status_code=303)
+
+    from datetime import datetime
+
+    for res in prop.reservas:
+        # Lógica de colisão: Se InicioA <= FimB e FimA >= InicioB, há interseção
+        if ocupado_inicio <= res.data_fim.date() and ocupado_fim >= res.data_inicio.date():
+            # Dispara erro na tela
+            return RedirectResponse(url=f"/propriedade/{propriedade_id}?msg_erro=COLISÃO DE DATAS! O período {ocupado_inicio.strftime('%d/%m')} até {ocupado_fim.strftime('%d/%m')} conflita com uma reserva existente.", status_code=303)
+
+    nova_reserva = Reserva(
+        data_inicio=datetime.combine(ocupado_inicio, datetime.min.time()),
+        data_fim=datetime.combine(ocupado_fim, datetime.min.time()),
+        ocupado_por=ocupado_por,
+        valor_arrecadado=valor_negociado,
+        propriedade_id=propriedade_id
+    )
+    db.add(nova_reserva)
+    db.commit()
+
+    return RedirectResponse(url=f"/propriedade/{propriedade_id}?msg_sucesso=Reserva agendada com sucesso!", status_code=303)
+
+@app.post("/reserva/{reserva_id}/deletar")
+async def deletar_reserva(reserva_id: int, db: Session = Depends(get_db)):
+    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if reserva:
+        prop_id = reserva.propriedade_id
+        db.delete(reserva)
+        db.commit()
+        return RedirectResponse(url=f"/propriedade/{prop_id}?msg_sucesso=Reserva cancelada/apagada.", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/exportar/ical/{propriedade_id}.ics")
+async def exportar_calendario_ical(propriedade_id: int, db: Session = Depends(get_db)):
+    """
+    Gera um arquivo .ics oficial no padrao iCalendar. 
+    O Airbnb, Booking e VRBO vao visitar este link 
+    e bloquear as datas que o SincroTeto ja vendeu/reservou.
+    """
+    propriedade = db.query(Propriedade).filter(Propriedade.id == propriedade_id).first()
+    if not propriedade:
+        return PlainTextResponse("Arquivo nao encontrado.", status_code=404)
+
+    import uuid
+    from datetime import datetime
+
+    # Construcao do Cabecalho iCalendar
+    linhas_ical = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//SincroTeto Property Management//BR",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{propriedade.nome} - SincroTeto",
+        "X-WR-TIMEZONE:America/Recife"
+    ]
+
+    # Para cada reserva cadastrada no SincroTeto, cria um VEVENT
+    # (Só envia as datas de Inicio e Fim pra o Airbnb bloquear a agenda, protegendo os valores e nomes dos hóspedes)
+    now_stamp = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+
+    for res in propriedade.reservas:
+        # Formata data para o padrao iCal YYYYMMDD (Full day event)
+        dtstart = res.data_inicio.strftime('%Y%m%d')
+        # No iCal, o dia final para eventos de dia inteiro é EXCLUSIVO, entao adicionamos 1 dia para bater com o Airbnb
+        import timedelta
+        try:
+            from datetime import timedelta
+        except ImportError:
+            pass
+            
+        fim_corrigido = res.data_fim + timedelta(days=1)
+        dtend = fim_corrigido.strftime('%Y%m%d')
+        
+        uid = f"SINCROTETO-RES-{res.id}-{uuid.uuid4().hex[:8]}@sincroteto.com"
+
+        linhas_ical.extend([
+            "BEGIN:VEVENT",
+            f"DTSTAMP:{now_stamp}",
+            f"UID:{uid}",
+            f"DTSTART;VALUE=DATE:{dtstart}",
+            f"DTEND;VALUE=DATE:{dtend}",
+            f"SUMMARY:Bloqueado pelo SincroTeto ({res.ocupado_por})",
+            "STATUS:CONFIRMED",
+            "END:VEVENT"
+        ])
+
+    linhas_ical.append("END:VCALENDAR")
+
+    # Retorna o arquivo com o header correto para download/leitura
+    ics_content = "\r\n".join(linhas_ical)
+    return PlainTextResponse(ics_content, media_type="text/calendar")

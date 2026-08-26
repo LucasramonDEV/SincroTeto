@@ -1,0 +1,67 @@
+--- app/main.py
++++ app/main.py
+@@ -375,10 +375,18 @@
+     import requests
+     import re
+     from bs4 import BeautifulSoup
+     if not data.url or not data.url.startswith("http"):
+         return {"nome": None}
++        
++    # LIMPEZA PROFUNDA DA URL DO AIRBNB E BOOKING
++    url_limpa = data.url
++    if "?" in url_limpa:
++        url_limpa = url_limpa.split("?")[0]
++    # Adiciona o locale em pt-br nativamente
++    if "airbnb" in url_limpa:
++        url_limpa += "?locale=pt-BR"
+ 
+     headers = {
+         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+     }
+@@ -395,21 +403,26 @@
+     if meta_title and meta_title.get("content"):
+         nome = meta_title.get("content").split('-')[0].strip()
+ 
+     if not nome:
+         match = re.search(r'<title>(.*?)</title>', html)
+         if match:
+             nome = match.group(1).split('-')[0].strip()
++            
++    if not nome:
++        nome = "Propriedade Airbnb" # Fallback
+ 
+     # 2. Descricao
+     meta_desc = soup.find("meta", property="og:description")
+     if meta_desc:
+         descricao = meta_desc.get("content")
++    else:
++        descricao = "Descrição não encontrada publicamente."
+ 
+-    # 3. Fotos (O Airbnb injeta no codigo fonte um json complexo, mas primeiro tentamos o og:image)
++    # 3. Fotos
+     meta_img = soup.find("meta", property="og:image")
+     if meta_img:
+         fotos.append(meta_img.get("content"))
+ 
+     # Busca brutal por mais imagens do airbnb no código fonte (geralmente links terminados em ?aki_policy=large)
+     img_matches = re.findall(r'https://a0\.muscache\.com/im/pictures/[^"\'\s]+\?aki_policy=large', html)
+     if img_matches:
+@@ -420,11 +433,18 @@
+                 if img_hi_res not in fotos:
+                     fotos.append(img_hi_res)
+                     
++    # Tentativa de captura das imagens do formato mais novo do Airbnb
++    if len(fotos) <= 1:
++        img_matches2 = re.findall(r'https://a0\.muscache\.com/im/pictures/miso/Hosting-[^"\'\s]+\?[^"\'\s]*', html)
++        for img in img_matches2:
++            if "im_w=" in img and img not in fotos:
++                fotos.append(img)
++
+     # Junta as 3 primeiras fotos encontradas com virgula
+     foto_final_string = ",".join(fotos[:4]) if fotos else None
+ 
+     # INFERÊNCIA DE REGIÃO E BAIRRO
+     regiao_inferida = None
+     bairro_inferido = None
+     texto_analise = f"{nome} {descricao}".lower()

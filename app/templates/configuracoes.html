@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SincroTeto - Configurações</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        function previewFoto(event) {
+            var reader = new FileReader();
+            reader.onload = function(){
+                var output = document.getElementById('preview_foto');
+                output.src = reader.result;
+            };
+            reader.readAsDataURL(event.target.files[0]);
+        }
+
+        function validarCPFMatematico(cpf) {
+            cpf = cpf.replace(/[^\d]+/g, ''); // Remove pontuação
+            if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false; // Verifica tamanho e repetidos
+
+            let soma = 0;
+            for (let i = 1; i <= 9; i++) soma += parseInt(cpf.substring(i - 1, i)) * (11 - i);
+            let resto = (soma * 10) % 11;
+            if ((resto === 10) || (resto === 11)) resto = 0;
+            if (resto !== parseInt(cpf.substring(9, 10))) return false;
+
+            soma = 0;
+            for (let i = 1; i <= 10; i++) soma += parseInt(cpf.substring(i - 1, i)) * (12 - i);
+            resto = (soma * 10) % 11;
+            if ((resto === 10) || (resto === 11)) resto = 0;
+            if (resto !== parseInt(cpf.substring(10, 11))) return false;
+
+            return true;
+        }
+
+        function submeterPerfil(event) {
+            var inputCpf = document.getElementById('cpf').value;
+            if (inputCpf && !validarCPFMatematico(inputCpf)) {
+                event.preventDefault(); // Impede o envio do form
+                alert("O CPF digitado é INVÁLIDO. Por favor, corrija antes de salvar.");
+                document.getElementById('cpf').focus();
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-600 p-4 text-white flex justify-center items-center shadow-md relative">
+        <h1 class="text-2xl font-bold tracking-wider">Configurações de Perfil</h1>
+        <div class="absolute right-4">
+            <a href="/dashboard?user_id={{ usuario.id }}" class="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded text-sm font-bold shadow transition">Voltar ao Dashboard</a>
+        </div>
+    </nav>
+
+    <main class="p-8 max-w-4xl mx-auto space-y-8">
+        
+        {% if msg_sucesso %}
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
+            {{ msg_sucesso }}
+        </div>
+        {% endif %}
+        
+        {% if msg_erro %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+            {{ msg_erro }}
+        </div>
+        {% endif %}
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Informações Pessoais</h2>
+            
+            <form action="/perfil/editar" method="POST" enctype="multipart/form-data" onsubmit="submeterPerfil(event)" class="space-y-6">
+                <input type="hidden" name="user_id" value="{{ usuario.id }}">
+                
+                <div class="flex items-center gap-6 mb-6">
+                    <div class="relative w-24 h-24 rounded-full overflow-hidden border-4 border-gray-200 bg-gray-100">
+                        <img id="preview_foto" src="{{ usuario.foto_perfil or 'https://via.placeholder.com/150?text=Foto' }}" class="w-full h-full object-cover">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Foto de Perfil</label>
+                        <input type="file" name="foto" accept="image/*" onchange="previewFoto(event)" class="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nome</label>
+                        <input type="text" name="nome" value="{{ usuario.nome }}" required class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Sobrenome</label>
+                        <input type="text" name="sobrenome" value="{{ usuario.sobrenome or '' }}" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">E-mail</label>
+                        <input type="email" name="email" value="{{ usuario.email or '' }}" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">CPF</label>
+                        <input type="text" id="cpf" name="cpf" value="{{ usuario.cpf or '' }}" placeholder="Apenas números (Ex: 00011122233)" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                        <p class="text-xs text-gray-400 mt-1">O sistema validará se é um CPF real.</p>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Telefone</label>
+                    <div class="flex mt-1">
+                        <!-- Extraímos os dois primeiros caracteres se existirem (gambiarra visual rapida) ou criamos campos separados -->
+                        <select name="prefixo" class="p-2 border border-gray-300 border-r-0 rounded-l focus:border-blue-500 bg-gray-50">
+                            <option value="+55" {% if usuario.telefone and usuario.telefone.startswith('+55') %}selected{% endif %}>🇧🇷 +55 (Brasil)</option>
+                            <option value="+1" {% if usuario.telefone and usuario.telefone.startswith('+1') %}selected{% endif %}>🇺🇸 +1 (EUA)</option>
+                            <option value="+351" {% if usuario.telefone and usuario.telefone.startswith('+351') %}selected{% endif %}>🇵🇹 +351 (PT)</option>
+                            <option value="+34" {% if usuario.telefone and usuario.telefone.startswith('+34') %}selected{% endif %}>🇪🇸 +34 (ES)</option>
+                        </select>
+                        <input type="text" name="numero_telefone" placeholder="(11) 99999-9999" value="{{ usuario.telefone[3:] if usuario.telefone and usuario.telefone.startswith('+') else usuario.telefone }}" class="w-full p-2 border border-gray-300 rounded-r focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="pt-4 text-right border-b pb-8 border-gray-200">
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 shadow">Salvar Perfil</button>
+                </div>
+            </form>
+
+            <h2 class="text-xl font-bold text-red-600 mb-4 mt-8">Alterar Senha de Acesso</h2>
+            <form action="/perfil/alterar_senha" method="POST" class="space-y-4">
+                <input type="hidden" name="user_id" value="{{ usuario.id }}">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Senha Atual</label>
+                    <input type="password" name="senha_atual" required class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-red-500">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nova Senha</label>
+                        <input type="password" name="nova_senha" required class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-red-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Confirmar Nova Senha</label>
+                        <input type="password" name="confirmar_senha" required class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-red-500">
+                    </div>
+                </div>
+                
+                <div class="pt-2 text-right">
+                    <button type="submit" class="bg-red-600 text-white px-6 py-2 rounded font-bold hover:bg-red-700 shadow">Atualizar Senha de Segurança</button>
+                </div>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

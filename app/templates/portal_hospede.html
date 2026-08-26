@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal do Hóspede - {{ propriedade.nome }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilo para garantir uma boa impressão/geração em PDF */
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: white !important; }
+        }
+        .whitespace-pre-line {
+            white-space: pre-line;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex justify-center py-10">
+    <div class="bg-white w-[800px] shadow-2xl p-12 border-t-8 border-blue-600 rounded">
+        <div class="flex justify-between items-start mb-10 border-b pb-6">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-800">{{ propriedade.nome }}</h1>
+                <p class="text-gray-500 text-lg mt-2">Bem-vindo(a) à sua estadia perfeita em {{ propriedade.regiao }}.</p>
+            </div>
+            <button onclick="window.print()" class="no-print bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700">Baixar/Imprimir PDF</button>
+        </div>
+
+        <div class="space-y-8">
+            <section>
+                <h2 class="text-2xl font-bold text-blue-600 mb-3 flex items-center">📶 Internet (Wi-Fi)</h2>
+                <div class="bg-gray-50 p-4 rounded border">
+                    <p class="text-gray-700"><strong>Rede:</strong> {{ propriedade.pdf_wifi_rede }}</p>
+                    <p class="text-gray-700"><strong>Senha:</strong> {{ propriedade.pdf_wifi_senha }}</p>
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-2xl font-bold text-blue-600 mb-3 flex items-center">📜 Regras da Casa</h2>
+                <div class="text-gray-700 bg-gray-50 p-4 rounded border whitespace-pre-line">
+                    {{ propriedade.pdf_regras_casa }}
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-2xl font-bold text-blue-600 mb-3 flex items-center">💡 Como Usar... (Guia Rápido)</h2>
+                <div class="border p-4 rounded bg-gray-50 text-gray-700 whitespace-pre-line">
+                    {{ propriedade.pdf_guia_uso }}
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-2xl font-bold text-red-600 mb-3 flex items-center">🚨 Contatos de Emergência</h2>
+                <div class="bg-red-50 p-4 rounded border border-red-200 text-gray-700 whitespace-pre-line">
+                    {{ propriedade.pdf_contatos_emergencia }}
+                </div>
+            </section>
+        </div>
+    </div>
+</body>
+</html>

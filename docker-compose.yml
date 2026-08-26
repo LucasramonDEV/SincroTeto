@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: sincroteto-web
+    ports:
+      - "8000:8000"
+    volumes:
+      # Sincroniza a pasta do seu computador com a do container (hot-reload)
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

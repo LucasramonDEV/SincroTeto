@@ -1,0 +1,108 @@
+=========================================================
+      RELATÓRIO FINAL E GUIA DE USO - SINCROTETO
+=========================================================
+
+1. VISÃO GERAL DO PROJETO
+O SincroTeto foi arquitetado para ser um sistema avançado de gestão de propriedades, 
+focado em inteligência de dados, utilizando Python, Pandas e Plotly.
+
+2. TECNOLOGIAS UTILIZADAS (100% Gratuitas e Open-Source)
+- Backend: Python 3 com FastAPI (Leve, veloz e ideal para APIs modernas).
+- Motor de Dados: Pandas (Para cruzar custos, vacância e gerar agrupamentos financeiros).
+- Gráficos: Plotly (Renderiza gráficos interativos direto em HTML).
+- Banco de Dados: SQLite via SQLAlchemy (Fácil de rodar localmente sem configurações).
+- Frontend: HTML puro com Tailwind CSS (Design limpo) e Jinja2.
+- Outras libs: icalendar (para extração do Airbnb), requests (API Banco Central), schedule (Robô de background).
+
+3. FASES DESENVOLVIDAS
+
+FASE 1: Estrutura Base
+- Criação das pastas (models, services, templates, estáticos).
+- Criação do requirements.txt.
+
+FASE 2: Banco de Dados e Autenticação
+- Criação das tabelas de Usuário, Propriedade e Gasto.
+- Autenticação simples por "Chave de Acesso" (O sistema já gera o login 'admin123' na primeira rodada).
+- Criação do Dashboard inicial.
+
+FASE 3: Gestão e iCal
+- Rota para adicionar novas propriedades (Flat, Residencial, etc).
+- Desenvolvimento do script de parsing de arquivos `.ics` do Airbnb para transformar
+  calendários ocupados em DataFrames do Pandas.
+
+FASE 4: Motor Financeiro
+- Conexão em tempo real com a API oficial do Banco Central (SGS) para puxar o IPCA acumulado.
+- Criação do "Simulador de Custo de Oportunidade" (Cruza % de ocupação e valores de aluguel curto vs longo prazo).
+
+FASE 5: Inteligência Artificial e Alertas
+- Robô de background que verifica se a propriedade está em região litorânea/mata 
+  e gera alertas na tela inicial se passou 3 meses sem manutenção preventiva.
+- IA de Sazonalidade: Avisa quando baixar preços em períodos de chuvas em áreas turísticas (ex: Recife/Porto de Galinhas).
+- Categorizador NLP: Ao digitar o gasto (ex: "Conserto do Chuveiro"), classifica sozinho como "Manutenção Hidráulica".
+
+FASE 6: Dashboards Inteligentes e PDF
+- Tela isolada para gerar os relatórios utilizando a integração Pandas + Plotly.
+- Geração de 3 Gráficos: Rosca (Despesas globais), Barras Empilhadas (Despesas por imóvel), e Linha de tendência.
+- Portal do Hóspede formatado especificamente para ser impresso ou "Salvo em PDF" via navegador, 
+  com dicas de Wifi, Regras e Emergências.
+
+---------------------------------------------------------
+      GUIA PRÁTICO: COMO TESTAR NO SEU COMPUTADOR
+---------------------------------------------------------
+
+PASSO 1: PREPARAR O AMBIENTE
+Abra o seu terminal do Mac (na pasta do projeto /Users/macbook/Documents/SincroTeto) e rode:
+    pip install -r requirements.txt
+
+PASSO 2: RODAR O SISTEMA
+No mesmo terminal, inicie o servidor:
+    python run.py
+
+PASSO 3: ACESSAR O SISTEMA
+Abra o Google Chrome e digite a URL:
+    http://localhost:8000
+
+PASSO 4: FLUXO DE TESTE COMPLETO
+1. Faça login com a chave: admin123
+2. No Dashboard, clique em "+ Nova Propriedade".
+3. Preencha os dados (Ex: Nome="Flat Praia", Região="Porto de Galinhas", Custo=500). Salve.
+4. Volte ao Dashboard e clique em "Ver Detalhes" da propriedade criada.
+5. Em "Adicionar Gasto", escreva "Chuveiro estragou" e coloque o valor 100. Registre. 
+   -> (Veja como a IA classifica sozinho como "Manutenção Hidráulica"!)
+6. No Simulador, coloque Ocupação=50, Diária=200, Aluguel Fixo=2500 e clique em Simular.
+   -> (Veja a resposta recomendando curto ou longo prazo e o ganho em %).
+7. Volte ao Dashboard. Como a última manutenção foi agendada hoje, para forçar o robô de 
+   alerta de maresia aparecer, o código precisaria de meses de intervalo, mas ele está armado.
+8. Retorne ao painel e explore os novos links (Se já os linkou) ou vá nas rotas de relatório!
+   
+Para ver os gráficos: Acesse http://localhost:8000/relatorio/1
+Para ver o PDF (Portal): Acesse http://localhost:8000/propriedade/1/portal
+
+---------------------------------------------------------
+      GUIA PRÁTICO: COMO RODAR COM DOCKER
+---------------------------------------------------------
+
+Como você utiliza Docker, o processo de execução é ainda mais simples e não sujará 
+o sistema operacional do seu Mac com bibliotecas do Python.
+
+PASSO 1: INICIAR O SISTEMA
+Abra o terminal, navegue até a pasta do projeto e rode:
+    docker-compose up --build
+
+Este comando fará o Docker:
+1. Baixar o Python.
+2. Instalar todas as dependências automaticamente (Pandas, FastAPI, Plotly).
+3. Levantar o servidor.
+
+PASSO 2: ACESSAR
+Com o terminal rodando o Docker, abra o navegador e acesse:
+    http://localhost:8000
+
+PASSO 3: DESLIGAR O SISTEMA
+Quando terminar de testar, você pode pressionar CTRL+C no terminal onde o docker está rodando, 
+ou abrir outra aba do terminal na mesma pasta e digitar:
+    docker-compose down
+
+Nota sobre banco de dados: O arquivo SQLite (sincroteto.db) será criado dentro do contêiner, mas 
+como mapeamos o volume no docker-compose.yml, ele será espelhado e salvo na sua pasta local. 
+Suas propriedades cadastradas não serão apagadas ao desligar o Docker!

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SincroTeto - Painel Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-800 min-h-screen text-white">
+    <nav class="bg-gray-900 p-4 flex justify-between items-center shadow-lg border-b border-gray-700">
+        <h1 class="text-xl font-bold text-blue-400">SincroTeto | ADMIN</h1>
+        <div class="flex items-center gap-4">
+            <a href="/alertas?user_id={{ usuario.id }}" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-sm font-bold shadow">Ver Painel de Alertas IA</a>
+            <span class="text-gray-300 ml-4">Logado como: {{ usuario.nome }}</span>
+            <a href="/" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition">Sair</a>
+        </div>
+    </nav>
+
+    <main class="p-8 max-w-7xl mx-auto">
+        <h2 class="text-3xl font-bold mb-8">Visão Geral do Sistema</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            <div class="bg-gray-900 p-6 rounded-lg shadow-lg border border-gray-700">
+                <h3 class="text-gray-400 text-sm font-semibold uppercase">Total de Usuários (Clientes)</h3>
+                <p class="text-4xl font-bold text-blue-400">{{ (todos_usuarios|length) - 1 }}</p>
+            </div>
+            <div class="bg-gray-900 p-6 rounded-lg shadow-lg border border-gray-700">
+                <h3 class="text-gray-400 text-sm font-semibold uppercase">Total de Propriedades</h3>
+                <p class="text-4xl font-bold text-green-400">{{ todas_propriedades|length }}</p>
+            </div>
+        </div>
+
+        <h3 class="text-xl font-bold mb-4 border-b border-gray-700 pb-2">Gestão de Clientes e Imóveis</h3>
+        
+        <div class="space-y-6">
+            {% for cliente in todos_usuarios %}
+            {% if cliente.papel != 'admin' %}
+            <div class="bg-gray-900 rounded-lg p-6 border border-gray-700">
+                <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+                    <h4 class="text-xl font-bold text-gray-200">👤 {{ cliente.nome }} <span class="text-sm font-normal text-gray-500">(Login: {{ cliente.login }})</span></h4>
+                    <form action="/admin/remover_usuario/{{ cliente.id }}" method="POST" onsubmit="return confirm('Apagar este cliente e todas as suas propriedades?');">
+                        <button type="submit" class="text-red-500 hover:text-red-400 text-sm font-bold">🗑️ Remover Cliente</button>
+                    </form>
+                </div>
+                
+                {% if cliente.propriedades %}
+                <ul class="space-y-3">
+                    {% for prop in cliente.propriedades %}
+                    <li class="bg-gray-800 p-3 rounded flex justify-between items-center border-l-4 {% if prop.status == 'Livre' %}border-green-500{% else %}border-red-500{% endif %}">
+                        <div>
+                            <span class="font-bold text-gray-300">{{ prop.nome }}</span>
+                            <span class="text-xs text-gray-500 ml-2">{{ prop.regiao }} | Dono: {{ cliente.nome }} | Alerta config: {{ prop.alerta_frequencia_meses }}m</span>
+                        </div>
+                        <div class="flex gap-4">
+                            <a href="/propriedade/{{ prop.id }}?admin=1" class="text-blue-400 hover:text-blue-300 text-sm font-bold">Visualizar/Editar</a>
+                            <form action="/admin/remover_propriedade/{{ prop.id }}" method="POST" class="inline" onsubmit="return confirm('Remover propriedade?');">
+                                <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Remover</button>
+                            </form>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-sm text-gray-500 italic">Nenhum imóvel cadastrado.</p>
+                {% endif %}
+                
+                <div class="mt-4">
+                    <a href="/propriedade/nova?user_id={{ cliente.id }}&from_admin=1" class="text-sm text-green-400 hover:text-green-300 font-bold">+ Adicionar Propriedade para {{ cliente.nome }}</a>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SincroTeto - Nova Propriedade</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        const regioes_bairros = {
+            "Ipojuca (Praias)": ["Porto de Galinhas", "Muro Alto", "Cupe", "Serrambi"],
+            "Recife (Zona Norte)": ["Casa Amarela", "Graças", "Espinheiro", "Tamarineira", "Casa Forte", "Outro"],
+            "Recife (Zona Oeste)": ["Várzea", "Cordeiro", "Iputinga", "Madalena", "Outro"],
+            "Recife (Zona Sul)": ["Boa Viagem", "Pina", "Imbiribeira", "Setúbal", "Outro"],
+            "Gravatá": ["Centro", "Alpes Suíços", "Porta Florada", "Outro"],
+            "Sairé": ["Centro", "Zona Rural", "Outro"],
+            "Olinda (Sítio Histórico e Centro)": ["Carmo", "Amparo", "Varadouro", "Outro"],
+            "Olinda (Faixa Litorânea)": ["Bairro Novo", "Casa Caiada", "Jardim Atlântico", "Outro"]
+        };
+
+        function atualizarBairros() {
+            var regiaoSelect = document.getElementById("regiao");
+            var bairroSelect = document.getElementById("bairro");
+            var regiaoSelecionada = regiaoSelect.value;
+            
+            bairroSelect.innerHTML = "";
+            
+            if (regiaoSelecionada && regioes_bairros[regiaoSelecionada]) {
+                var bairros = regioes_bairros[regiaoSelecionada];
+                for (var i = 0; i < bairros.length; i++) {
+                    var option = document.createElement("option");
+                    option.value = bairros[i];
+                    option.text = bairros[i];
+                    bairroSelect.appendChild(option);
+                }
+            }
+        }
+
+        function toggleValores() {
+            var tipo = document.getElementById('tipo_aluguel').value;
+            if (tipo === 'Curto_Prazo') {
+                document.getElementById('div_diaria').style.display = 'block';
+                document.getElementById('div_mensalidade').style.display = 'none';
+            } else {
+                document.getElementById('div_diaria').style.display = 'none';
+                document.getElementById('div_mensalidade').style.display = 'block';
+            }
+        }
+
+        window.onload = function() {
+            toggleValores();
+            atualizarBairros();
+        };
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-600 p-4 text-white flex justify-center items-center shadow-md relative">
+        <h1 class="text-2xl font-bold tracking-wider">SincroTeto</h1>
+        <div class="absolute right-4 flex items-center gap-4">
+            <a href="javascript:history.back()" class="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded text-sm font-bold shadow transition">Voltar</a>
+        </div>
+    </nav>
+
+    <main class="p-8 max-w-2xl mx-auto">
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Cadastrar Nova Propriedade</h2>
+
+            <form action="/propriedade/nova" method="POST" class="space-y-4">
+                <input type="hidden" name="dono_id" value="{{ user_id }}">
+                <input type="hidden" id="descricao_oculta" name="descricao_oculta" value="">
+
+                <div class="bg-blue-50 border border-blue-200 p-4 rounded mb-4">
+                    <label class="block text-sm font-bold text-blue-800">1. Extrair Dados do Airbnb (Opcional)</label>
+                    <p class="text-xs text-gray-600 mb-2">Cole o link público do Airbnb. O sistema preencherá Título e Região sozinhos.</p>
+                    <div class="flex gap-2">
+                        <input type="url" id="link_ical" name="link_ical" placeholder="https://www.airbnb.com.br/rooms/12345" class="w-full p-2 border border-gray-300 rounded focus:border-blue-500 text-sm">
+                        <button type="button" onclick="fetchIcalInfo()" class="bg-blue-600 text-white px-4 rounded hover:bg-blue-700 text-sm font-bold">Puxar Dados</button>
+                    </div>
+                    <p id="ical_status" class="text-xs mt-1"></p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Nome do Imóvel</label>
+                    <input type="text" id="nome" name="nome" required placeholder="Ex: Flat Resort 101" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 text-lg font-semibold">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Descrição do Espaço (Opcional)</label>
+                    <textarea name="descricao_oculta" rows="3" placeholder="Insira detalhes sobre o local..." class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Região Maior</label>
+                        <select name="regiao" id="regiao" onchange="atualizarBairros()" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                            <option value="Ipojuca (Praias)">Ipojuca (Praias)</option>
+                            <option value="Recife (Zona Norte)">Recife (Zona Norte)</option>
+                            <option value="Recife (Zona Oeste)">Recife (Zona Oeste)</option>
+                            <option value="Recife (Zona Sul)">Recife (Zona Sul)</option>
+                            <option value="Gravatá">Gravatá</option>
+                            <option value="Sairé">Sairé</option>
+                            <option value="Olinda (Sítio Histórico e Centro)">Olinda (Sítio Histórico e Centro)</option>
+                            <option value="Olinda (Faixa Litorânea)">Olinda (Faixa Litorânea)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Bairro Específico</label>
+                        <select name="bairro" id="bairro" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 font-bold">
+                            <!-- Preenchido via Javascript -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Categoria (Tipo)</label>
+                        <select name="tipo" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                            <option value="Flat_Veraneio">Flat de Veraneio</option>
+                            <option value="Residencial">Residencial (Casa/Apto)</option>
+                            <option value="Galpao">Galpão</option>
+                            <option value="Sala_Empresarial">Sala Empresarial/Escritório</option>
+                            <option value="Outros">Outros</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Finalidade de Locação</label>
+                        <select name="tipo_aluguel" id="tipo_aluguel" onchange="toggleValores()" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                            <option value="Curto_Prazo">Curto Prazo (Temporada)</option>
+                            <option value="Longo_Prazo">Longo Prazo (Fixo)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 border-t pt-4">
+                    <div id="div_diaria">
+                        <label class="block text-sm font-medium text-gray-700">Valor da Diária (R$)</label>
+                        <input type="number" step="0.01" name="valor_diaria" value="" onclick="this.value=''" placeholder="0.00" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 font-bold text-green-700">
+                    </div>
+                    <div id="div_mensalidade" style="display:none;">
+                        <label class="block text-sm font-medium text-gray-700">Mensalidade (R$)</label>
+                        <input type="number" step="0.01" name="valor_mensalidade" value="" onclick="this.value=''" placeholder="0.00" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 font-bold text-green-700">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Custo Fixo (Cond/IPTU)</label>
+                        <input type="number" step="0.01" name="custo_fixo_mensal" value="" onclick="this.value=''" placeholder="0.00" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t mt-4">
+                    <label class="block text-sm font-medium text-gray-700">Alerta de Desgaste (IA Temporizador Vistoria)</label>
+                    <select name="alerta_frequencia_meses" class="mt-1 w-full p-2 border border-gray-300 rounded focus:border-blue-500 font-bold text-yellow-700">
+                        <option value="3">3 Meses (Recomendado para Litoral)</option>
+                        <option value="4">4 Meses</option>
+                        <option value="5">5 Meses (Não muito recomendado)</option>
+                        <option value="6">6 Meses (Não recomendado dependendo da área)</option>
+                    </select>
+                </div>
+
+                <div class="pt-6">
+                    <button type="submit" class="w-full bg-green-600 text-white p-4 rounded text-lg font-bold hover:bg-green-700 transition shadow-lg">Salvar Propriedade no Banco</button>
+                </div>
+            </form>
+        </div>
+    </main>
+</body>
+</html>
